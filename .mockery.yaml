@@ -1,0 +1,19 @@
+all: false
+dir: "{{.InterfaceDir}}/mocks"
+filename: "{{.InterfaceName}}.go"
+structname: "Mock{{.InterfaceName|firstUpper}}"
+pkgname: "mocks"
+
+packages:
+  github.com/Stanislav-Shchelokovskiy/clean-code/service/worse:
+    config:
+      all: True
+  github.com/Stanislav-Shchelokovskiy/clean-code/service/bad:
+    config:
+      all: True
+  github.com/Stanislav-Shchelokovskiy/clean-code/service/good:
+    config:
+      all: True
+  github.com/Stanislav-Shchelokovskiy/clean-code/service/best:
+    config:
+      all: True
