@@ -1,4 +1,4 @@
-package worse
+package not_good
 
 import (
 	"context"
@@ -16,9 +16,6 @@ const (
 
 type Repo interface {
 	GetItems(ctx context.Context, ids []int64) ([]*ds.Item, error)
-}
-
-type ItemsUpdater interface {
 	UpdateItems(ctx context.Context, items []*ds.Item) error
 }
 
@@ -27,16 +24,14 @@ type Config interface {
 }
 
 type EventHandler struct {
-	config       Config
-	repo         Repo
-	itemsUpdater ItemsUpdater
+	config Config
+	repo   Repo
 }
 
-func NewEventHandler(config Config, repo Repo, itemsUpdater ItemsUpdater) *EventHandler {
+func NewEventHandler(config Config, repo Repo) *EventHandler {
 	return &EventHandler{
-		config:       config,
-		repo:         repo,
-		itemsUpdater: itemsUpdater,
+		config: config,
+		repo:   repo,
 	}
 }
 
@@ -79,14 +74,14 @@ func (h *EventHandler) handle(ctx context.Context, e ds.VariantChangeEvent) erro
 
 		if hasBrandUpdate {
 			updatedItems := h.UpdateBrands(variant, existingItems)
-			if err := h.itemsUpdater.UpdateItems(ctx, updatedItems); err != nil {
+			if err := h.repo.UpdateItems(ctx, updatedItems); err != nil {
 				return err
 			}
 		}
 
 		if hasCategoryUpdates {
 			updatedItems := h.UpdateCategories(variant, existingItems)
-			if err := h.itemsUpdater.UpdateItems(ctx, updatedItems); err != nil {
+			if err := h.repo.UpdateItems(ctx, updatedItems); err != nil {
 				return err
 			}
 		}

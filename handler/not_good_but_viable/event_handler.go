@@ -1,4 +1,4 @@
-package worse
+package not_good_but_viable
 
 import (
 	"context"
@@ -16,9 +16,6 @@ const (
 
 type Repo interface {
 	GetItems(ctx context.Context, ids []int64) ([]*ds.Item, error)
-}
-
-type ItemsUpdater interface {
 	UpdateItems(ctx context.Context, items []*ds.Item) error
 }
 
@@ -27,16 +24,14 @@ type Config interface {
 }
 
 type EventHandler struct {
-	config       Config
-	repo         Repo
-	itemsUpdater ItemsUpdater
+	config Config
+	repo   Repo
 }
 
-func NewEventHandler(config Config, repo Repo, itemsUpdater ItemsUpdater) *EventHandler {
+func NewEventHandler(config Config, repo Repo) *EventHandler {
 	return &EventHandler{
-		config:       config,
-		repo:         repo,
-		itemsUpdater: itemsUpdater,
+		config: config,
+		repo:   repo,
 	}
 }
 
@@ -56,7 +51,7 @@ func (h *EventHandler) Handle(ctx context.Context, msg ds.Message) (err error) {
 }
 
 func (h *EventHandler) handle(ctx context.Context, e ds.VariantChangeEvent) error {
-	return handle(ctx, h, h.repo, h.itemsUpdater, e)
+	return handle(ctx, h, h.repo, e)
 }
 
 type innerEvenHandler interface {
@@ -65,7 +60,7 @@ type innerEvenHandler interface {
 	UpdateCategories(variant ds.Variant, items []*ds.Item) []*ds.Item
 }
 
-func handle(ctx context.Context, h innerEvenHandler, r Repo, u ItemsUpdater, e ds.VariantChangeEvent) error {
+func handle(ctx context.Context, h innerEvenHandler, r Repo, e ds.VariantChangeEvent) error {
 	for _, variant := range e.Variants {
 		if len(variant.ItemIDs) == 0 {
 			continue
@@ -89,14 +84,14 @@ func handle(ctx context.Context, h innerEvenHandler, r Repo, u ItemsUpdater, e d
 
 		if hasBrandUpdate {
 			updatedItems := h.UpdateBrands(variant, existingItems)
-			if err := u.UpdateItems(ctx, updatedItems); err != nil {
+			if err := r.UpdateItems(ctx, updatedItems); err != nil {
 				return err
 			}
 		}
 
 		if hasCategoryUpdates {
 			updatedItems := h.UpdateCategories(variant, existingItems)
-			if err := u.UpdateItems(ctx, updatedItems); err != nil {
+			if err := r.UpdateItems(ctx, updatedItems); err != nil {
 				return err
 			}
 		}

@@ -1,4 +1,4 @@
-package worse
+package bad
 
 import (
 	"context"
@@ -12,15 +12,10 @@ const (
 	categoryChanged = "Category"
 	brandChanged    = "Brand"
 	typeChanged     = "Type"
-	brandAttrID     = 1
-	typeAttrID      = 2
 )
 
 type Repo interface {
 	GetItems(ctx context.Context, ids []int64) ([]*ds.Item, error)
-}
-
-type ItemsUpdater interface {
 	UpdateItems(ctx context.Context, items []*ds.Item) error
 }
 
@@ -29,16 +24,14 @@ type Config interface {
 }
 
 type EventHandler struct {
-	config       Config
-	repo         Repo
-	itemsUpdater ItemsUpdater
+	config Config
+	repo   Repo
 }
 
-func NewEventHandler(config Config, repo Repo, itemsUpdater ItemsUpdater) *EventHandler {
+func NewEventHandler(config Config, repo Repo) *EventHandler {
 	return &EventHandler{
-		config:       config,
-		repo:         repo,
-		itemsUpdater: itemsUpdater,
+		config: config,
+		repo:   repo,
 	}
 }
 
@@ -49,7 +42,7 @@ func (h *EventHandler) Handle(ctx context.Context, msg ds.Message) (err error) {
 		}
 	}()
 
-	message := VariantChangeEvent{}
+	message := ds.VariantChangeEvent{}
 	err = json.Unmarshal(msg.Body, &message)
 	if err != nil {
 		return nil
@@ -57,7 +50,7 @@ func (h *EventHandler) Handle(ctx context.Context, msg ds.Message) (err error) {
 	return h.handle(ctx, message)
 }
 
-func (h *EventHandler) handle(ctx context.Context, e VariantChangeEvent) error {
+func (h *EventHandler) handle(ctx context.Context, e ds.VariantChangeEvent) error {
 	for _, variant := range e.Variants {
 		if len(variant.ItemIDs) == 0 {
 			continue
@@ -67,8 +60,6 @@ func (h *EventHandler) handle(ctx context.Context, e VariantChangeEvent) error {
 
 		var hasCategoryUpdates bool
 		var hasBrandUpdate bool
-		var newBrandID int64
-		var newTypeID int64
 
 		for _, diff := range e.Diff {
 			if hasCategoryUpdates && hasBrandUpdate {
@@ -102,26 +93,15 @@ func (h *EventHandler) handle(ctx context.Context, e VariantChangeEvent) error {
 		items := make([]*ds.Item, 0, len(existingItems))
 
 		if hasBrandUpdate {
-		ATTRIBUTES_BRAND_LOOP:
-			for _, attr := range variant.Attributes {
-				if attr.ID == brandAttrID {
-					for _, val := range attr.Values {
-						newBrandID = val
-						break ATTRIBUTES_BRAND_LOOP
-					}
-				}
-			}
-
+			var newBrandID int64
+			variant.GetIDs(&newBrandID, nil)
 			for _, item := range existingItems {
-				if item.BrandID == newBrandID {
-					continue
+				if item.SetBrandID(newBrandID) {
+					items = append(items, item)
 				}
-
-				item.BrandID = newBrandID
-				items = append(items, item)
 			}
 
-			err := h.itemsUpdater.UpdateItems(ctx, items)
+			err := h.repo.UpdateItems(ctx, items)
 			if err != nil {
 				return err
 			}
@@ -129,39 +109,25 @@ func (h *EventHandler) handle(ctx context.Context, e VariantChangeEvent) error {
 
 		if hasCategoryUpdates {
 			items = items[:0]
-			catsByLevels := make(map[int64]int64)
-			for _, category := range variant.Categories {
-				catsByLevels[category.Level] = category.ID
-			}
+			categories := variant.GetCategories()
 
-		ATTRIBUTES_TYPE_LOOP:
-			for _, attr := range variant.Attributes {
-				if attr.ID == typeAttrID {
-					for _, val := range attr.Values {
-						newTypeID = val
-						break ATTRIBUTES_TYPE_LOOP
-					}
-				}
-			}
+			var newTypeID int64
+			variant.GetIDs(nil, &newTypeID)
 
 			for _, item := range existingItems {
-				if item.ParentCategoryID == catsByLevels[1] &&
-					item.CategoryID == catsByLevels[2] &&
-					item.TypeID == newTypeID {
-					continue
+				if item.SetCategory(
+					categories[ds.L1],
+					categories[ds.L2],
+					newTypeID,
+				) {
+					items = append(items, item)
 				}
 
-				item.ParentCategoryID = catsByLevels[1]
-				item.CategoryID = catsByLevels[2]
-				item.TypeID = newTypeID
-				items = append(items, item)
-			}
-
-			if err := h.itemsUpdater.UpdateItems(ctx, items); err != nil {
-				return err
+				if err := h.repo.UpdateItems(ctx, items); err != nil {
+					return err
+				}
 			}
 		}
 	}
-
 	return nil
 }
