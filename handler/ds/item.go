@@ -1,5 +1,10 @@
 package ds
 
+const (
+	L1 = 1
+	L2 = 2
+)
+
 type Item struct {
 	ID               int64
 	BrandID          int64
@@ -8,14 +13,22 @@ type Item struct {
 	TypeID           int64
 }
 
-// Items ...
-type Items []*Item
+// SetBrandID обновляет BrandID и возвращает true если значение было изменено
+func (i *Item) SetBrandID(newID int64) bool {
+	prevID := i.BrandID
+	i.BrandID = newID
+	return prevID != newID
+}
 
-// MapBySkuKey ...
-func (items Items) AsMap() map[int64]*Item {
-	itemsMap := make(map[int64]*Item, len(items))
-	for _, item := range items {
-		itemsMap[item.ID] = item
+// SetCategory обновляет ParentCategoryID, CategoryID и TypeID и возвращает true если хоть одно значение было изменено
+func (i *Item) SetCategory(parentCatID, catID, typeID int64) bool {
+	if i.ParentCategoryID == parentCatID &&
+		i.CategoryID == catID &&
+		i.TypeID == typeID {
+		return false
 	}
-	return itemsMap
+	i.ParentCategoryID = parentCatID
+	i.CategoryID = catID
+	i.TypeID = typeID
+	return true
 }
