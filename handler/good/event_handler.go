@@ -1,10 +1,17 @@
-package good
+package not_good_but_viable
 
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/Stanislav-Shchelokovskiy/clean-code/handler/ds"
+)
+
+const (
+	categoryChanged = "Category"
+	brandChanged    = "Brand"
+	typeChanged     = "Type"
 )
 
 type Repo interface {
@@ -16,33 +23,15 @@ type Config interface {
 	IgnoreErrors() bool
 }
 
-type Updater interface {
-	CanUpdate(diff ds.Diff) bool
-	Update(ctx context.Context, variant ds.Variant, existingItems []*ds.Item) []*ds.Item
-}
-
-type Chain interface {
-	Handle(ctx context.Context, e ds.VariantChangeEvent) error
-}
-
 type EventHandler struct {
 	config Config
-	chain  Chain
+	repo   Repo
 }
 
-func NewEventHandler(config Config, repo Repo, updaters ...Updater) *EventHandler {
-	return newEventHandler(config,
-		NewChain(
-			NewItemsUpdater(repo),
-			updaters,
-		),
-	)
-}
-
-func newEventHandler(config Config, chain Chain) *EventHandler {
+func NewEventHandler(config Config, repo Repo) *EventHandler {
 	return &EventHandler{
 		config: config,
-		chain:  chain,
+		repo:   repo,
 	}
 }
 
@@ -58,6 +47,107 @@ func (h *EventHandler) Handle(ctx context.Context, msg ds.Message) (err error) {
 	if err != nil {
 		return nil
 	}
+	return h.handle(ctx, message)
+}
 
-	return h.chain.Handle(ctx, message)
+func (h *EventHandler) handle(ctx context.Context, e ds.VariantChangeEvent) error {
+	return handle(ctx, h, h.repo, e)
+}
+
+type innerEvenHandler interface {
+	CanHandle(diffs []ds.Diff) (bool, bool)
+	UpdateBrands(variant ds.Variant, items []*ds.Item) []*ds.Item
+	UpdateCategories(variant ds.Variant, items []*ds.Item) []*ds.Item
+}
+
+func handle(ctx context.Context, h innerEvenHandler, r Repo, e ds.VariantChangeEvent) error {
+	for _, variant := range e.Variants {
+		if len(variant.ItemIDs) == 0 {
+			continue
+		}
+
+		ids := variant.ItemIDs
+
+		hasCategoryUpdates, hasBrandUpdate := h.CanHandle(e.Diff)
+		if !hasCategoryUpdates && !hasBrandUpdate {
+			continue
+		}
+
+		existingItems, err := r.GetItems(ctx, ids)
+		if err != nil {
+			return err
+		}
+
+		if len(existingItems) == 0 {
+			continue
+		}
+
+		if hasBrandUpdate {
+			updatedItems := h.UpdateBrands(variant, existingItems)
+			if err := r.UpdateItems(ctx, updatedItems); err != nil {
+				return err
+			}
+		}
+
+		if hasCategoryUpdates {
+			updatedItems := h.UpdateCategories(variant, existingItems)
+			if err := r.UpdateItems(ctx, updatedItems); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (h *EventHandler) CanHandle(diffs []ds.Diff) (bool, bool) {
+	var hasCategoryUpdates bool
+	var hasBrandUpdate bool
+	for _, diff := range diffs {
+		if hasCategoryUpdates && hasBrandUpdate {
+			break
+		}
+
+		if strings.HasPrefix(diff.Path, categoryChanged) || strings.HasPrefix(diff.Path, typeChanged) {
+			hasCategoryUpdates = true
+			continue
+		}
+
+		if strings.HasPrefix(diff.Path, brandChanged) {
+			hasBrandUpdate = true
+			continue
+		}
+	}
+
+	return hasCategoryUpdates, hasBrandUpdate
+}
+
+func (h *EventHandler) UpdateBrands(variant ds.Variant, items []*ds.Item) []*ds.Item {
+	updatedItems := make([]*ds.Item, 0, len(items))
+	var newBrandID int64
+	variant.GetIDs(&newBrandID, nil)
+	for _, item := range items {
+		if item.SetBrandID(newBrandID) {
+			updatedItems = append(updatedItems, item)
+		}
+	}
+	return updatedItems
+}
+
+func (h *EventHandler) UpdateCategories(variant ds.Variant, items []*ds.Item) []*ds.Item {
+	updatedItems := make([]*ds.Item, 0, len(items))
+	categories := variant.GetCategories()
+
+	var newTypeID int64
+	variant.GetIDs(nil, &newTypeID)
+
+	for _, item := range items {
+		if item.SetCategory(
+			categories[ds.L1],
+			categories[ds.L2],
+			newTypeID,
+		) {
+			updatedItems = append(updatedItems, item)
+		}
+	}
+	return updatedItems
 }
