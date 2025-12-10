@@ -82,15 +82,16 @@ func handle(ctx context.Context, h innerEvenHandler, r Repo, e ds.VariantChangeE
 			continue
 		}
 
+		var updatedItems []*ds.Item
 		if hasBrandUpdate {
-			updatedItems := h.UpdateBrands(variant, existingItems)
-			if err := r.UpdateItems(ctx, updatedItems); err != nil {
-				return err
-			}
+			updatedItems = h.UpdateBrands(variant, existingItems)
 		}
 
 		if hasCategoryUpdates {
-			updatedItems := h.UpdateCategories(variant, existingItems)
+			updatedItems = h.UpdateCategories(variant, existingItems)
+		}
+
+		if len(updatedItems) > 0 {
 			if err := r.UpdateItems(ctx, updatedItems); err != nil {
 				return err
 			}
